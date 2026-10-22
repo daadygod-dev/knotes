@@ -1,0 +1,12 @@
+node_modules/
+data/*.db
+data/*.db-*
+data/webview2/
+.env
+.DS_Store
+.build/
+KNOTES.exe
+KNOTES-server.exe
+Microsoft.Web.WebView2.Core.dll
+Microsoft.Web.WebView2.WinForms.dll
+WebView2Loader.dll

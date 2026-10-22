@@ -1,0 +1,478 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3ede2" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#181613" />
+    <title>KNOTES — AI note planner</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="KNOTES — AI note planner" />
+    <meta property="og:description" content="A local-first notes app with fast search and an AI planning assistant." />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="/og-image.png" />
+    <link rel="icon" href="/brand-icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/icons/app-icon.ico" sizes="any" />
+    <link rel="icon" href="/icons/app-icon-16.png" type="image/png" sizes="16x16" />
+    <link rel="icon" href="/icons/app-icon-32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/icons/app-icon-48.png" type="image/png" sizes="48x48" />
+    <link rel="apple-touch-icon" href="/icons/app-icon-180.png" sizes="180x180" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="stylesheet" href="/fonts.css" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true">
+      <symbol id="i-search" viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="6.5"></circle>
+        <path d="m16 16 4.5 4.5"></path>
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14"></path>
+      </symbol>
+      <symbol id="i-note" viewBox="0 0 24 24">
+        <path d="M6 3.5h9l3 3V20.5H6z"></path>
+        <path d="M15 3.5v3h3M9 11h6M9 14.5h6M9 18h4"></path>
+      </symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24">
+        <path d="M3.5 6.5h6l2 2h9v10h-17z"></path>
+      </symbol>
+      <symbol id="i-tag" viewBox="0 0 24 24">
+        <path d="m4 4 7.2.6L20 13.4 13.4 20 4.6 11.2z"></path>
+        <circle cx="8.3" cy="8.3" r="1.2"></circle>
+      </symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24">
+        <path d="m9 4 6 6-2 1.5 3 3-1.5 1.5-3-3L10 15l-6-6z"></path>
+        <path d="m9.5 14.5-4 5"></path>
+      </symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24">
+        <rect x="5.5" y="10" width="13" height="10" rx="2"></rect>
+        <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"></path>
+        <path d="M12 14v2.5"></path>
+      </symbol>
+      <symbol id="i-unlock" viewBox="0 0 24 24">
+        <rect x="5.5" y="10" width="13" height="10" rx="2"></rect>
+        <path d="M8.5 10V7.5a3.5 3.5 0 0 1 6.7-1.4"></path>
+        <path d="M12 14v2.5"></path>
+      </symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24">
+        <path d="M5 7h14M9 7V4.5h6V7M7 7l1 13h8l1-13"></path>
+        <path d="M10 11v5M14 11v5"></path>
+      </symbol>
+      <symbol id="i-paperclip" viewBox="0 0 24 24">
+        <path d="m9 12.5 5.6-5.6a3.2 3.2 0 1 1 4.5 4.5l-7.3 7.3a5 5 0 0 1-7-7l7.2-7.2"></path>
+      </symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24">
+        <path d="m9 6 6 6-6 6"></path>
+      </symbol>
+      <symbol id="i-x" viewBox="0 0 24 24">
+        <path d="m6 6 12 12M18 6 6 18"></path>
+      </symbol>
+      <symbol id="i-arrow-left" viewBox="0 0 24 24">
+        <path d="m14 6-6 6 6 6"></path>
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="m5 12.5 4.5 4.5L19 7.5"></path>
+      </symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24">
+        <path d="M4 7h16M4 12h16M4 17h16"></path>
+      </symbol>
+
+      <symbol id="i-calendar" viewBox="0 0 24 24">
+        <rect x="4" y="5.5" width="16" height="15" rx="2"></rect>
+        <path d="M8 3.5v4M16 3.5v4M4 10h16"></path>
+      </symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24">
+        <rect x="8" y="8" width="12" height="12" rx="2"></rect>
+        <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+      </symbol>
+      <symbol id="i-flag" viewBox="0 0 24 24">
+        <path d="M6 21V4M6 4h11l-2.5 4L17 12H6"></path>
+      </symbol>
+    </svg>
+
+    <div class="app" id="app">
+      <aside class="sidebar" id="sidebar" aria-label="Notes library">
+        <div class="sidebar-head">
+          <div class="brand">
+            <span class="brand-mark"><img class="brand-icon" src="/brand-icon.svg" alt="" /></span>
+            <span class="brand-copy">
+              <strong>KNOTES</strong>
+              <small>AI note planner</small>
+            </span>
+          </div>
+          <button class="icon-button mobile-only" id="close-sidebar" type="button" aria-label="Close library">
+            <svg class="icon"><use href="#i-x"></use></svg>
+          </button>
+        </div>
+
+        <button class="new-note-button" id="new-note-sidebar" type="button">
+          <svg class="icon"><use href="#i-plus"></use></svg>
+          <span>New note</span>
+          <kbd>N</kbd>
+        </button>
+
+        <nav class="sidebar-nav">
+          <section class="nav-section">
+            <div class="nav-label">Library</div>
+            <button class="nav-row is-active" type="button" data-library="all">
+              <span class="nav-row-main">
+                <svg class="icon"><use href="#i-note"></use></svg>
+                <span>All notes</span>
+              </span>
+              <span class="count" id="all-count">0</span>
+            </button>
+            <div id="folder-list" class="folder-list"></div>
+          </section>
+
+          <section class="nav-section">
+            <div class="nav-label">Smart folders</div>
+            <button class="nav-row" type="button" data-smart="attachments">
+              <span class="nav-row-main">
+                <svg class="icon"><use href="#i-paperclip"></use></svg>
+                <span>With attachments</span>
+              </span>
+              <span class="count" id="attachments-count">0</span>
+            </button>
+            <button class="nav-row" type="button" data-smart="pinned">
+              <span class="nav-row-main">
+                <svg class="icon"><use href="#i-pin"></use></svg>
+                <span>Pinned notes</span>
+              </span>
+              <span class="count" id="pinned-count">0</span>
+            </button>
+            <button class="nav-row" type="button" data-smart="locked">
+              <span class="nav-row-main">
+                <svg class="icon"><use href="#i-lock"></use></svg>
+                <span>Locked notes</span>
+              </span>
+              <span class="count" id="locked-count">0</span>
+            </button>
+          </section>
+
+          <section class="nav-section">
+            <div class="nav-label">Pinned</div>
+            <div id="pinned-list" class="pinned-list"></div>
+          </section>
+
+          <section class="nav-section">
+            <div class="nav-label">Tags</div>
+            <div id="tag-list" class="tag-list"></div>
+          </section>
+        </nav>
+
+        <div class="sidebar-foot">
+          <img class="ai-icon" src="/ai.svg" alt="" />
+          <p>Your notes stay local. The AI planner reads only the note you choose.</p>
+        </div>
+      </aside>
+
+      <section class="notes-pane" id="notes-pane" aria-label="Notes list">
+        <header class="notes-head">
+          <div class="heading-group">
+            <button class="icon-button mobile-only" id="open-sidebar" type="button" aria-label="Open library">
+              <svg class="icon"><use href="#i-menu"></use></svg>
+            </button>
+            <div>
+              <h1 id="list-title">All notes</h1>
+              <p id="list-subtitle" class="subtle">Every note, one search away</p>
+            </div>
+          </div>
+          <button class="round-button" id="new-note" type="button" aria-label="Create a new note" title="New note">
+            <svg class="icon"><use href="#i-plus"></use></svg>
+          </button>
+        </header>
+
+        <div class="search-block">
+          <div class="search-field">
+            <svg class="icon search-icon"><use href="#i-search"></use></svg>
+            <input
+              id="search-input"
+              type="search"
+              placeholder="Search notes"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Search notes"
+            />
+            <button class="clear-search" id="clear-search" type="button" aria-label="Clear search" hidden>
+              <svg class="icon"><use href="#i-x"></use></svg>
+            </button>
+          </div>
+          <div class="search-options" id="search-options" hidden>
+            <button class="scope-button" id="scope-button" type="button" title="Toggle search scope">
+              <span id="scope-label">All notes</span>
+              <svg class="icon"><use href="#i-chevron"></use></svg>
+            </button>
+            <span class="search-status" id="search-status" aria-live="polite"></span>
+          </div>
+        </div>
+
+        <div class="search-results" id="search-results" hidden></div>
+        <div class="notes-list" id="notes-list"></div>
+        <div class="list-empty" id="list-empty" hidden>
+          <div class="empty-orbit"><svg class="icon"><use href="#i-search"></use></svg></div>
+          <h2>No notes here</h2>
+          <p>Try another folder, clear a filter, or create a new note.</p>
+          <button class="text-button" id="reset-filters" type="button">Clear filters</button>
+        </div>
+      </section>
+
+      <main class="editor-pane" id="editor-pane">
+        <div class="editor-empty" id="editor-empty">
+          <div class="empty-illustration">
+            <span class="paper paper-back"></span>
+            <span class="paper paper-front">
+              <span class="paper-line"></span>
+              <span class="paper-line short"></span>
+              <span class="paper-line"></span>
+            </span>
+            <span class="paper-clip"><svg class="icon"><use href="#i-paperclip"></use></svg></span>
+          </div>
+          <h2>Select a note</h2>
+          <p>Or press <kbd>N</kbd> to start something new.</p>
+          <div class="try-searches">
+            <span>Try searching</span>
+            <button class="chip" type="button" data-try="receipt">receipt</button>
+            <button class="chip" type="button" data-try="search">search</button>
+            <button class="chip" type="button" data-try="kuber">kuber</button>
+          </div>
+          <div class="evidence-card">
+            <div class="evidence-kicker">Built like a notes app</div>
+            <p>Prefix matching while you type, BM25 ranking, filters, and title-only results for locked notes.</p>
+          </div>
+        </div>
+
+        <article class="editor" id="editor" hidden>
+          <header class="editor-head">
+            <button class="icon-button mobile-only" id="back-to-list" type="button" aria-label="Back to notes list">
+              <svg class="icon"><use href="#i-arrow-left"></use></svg>
+            </button>
+            <div class="editor-context">
+              <span id="editor-folder">Notes</span>
+              <span class="context-dot">·</span>
+              <span id="editor-state">Saved</span>
+              <span class="lock-badge" id="editor-lock-badge" hidden>
+                <svg class="icon"><use href="#i-lock"></use></svg>
+                Locked
+              </span>
+            </div>
+            <div class="editor-actions">
+
+              <button class="icon-button" id="pin-button" type="button" aria-label="Pin note" title="Pin note">
+                <svg class="icon"><use href="#i-pin"></use></svg>
+              </button>
+              <button class="icon-button" id="lock-button" type="button" aria-label="Lock note" title="Lock note">
+                <svg class="icon"><use href="#i-lock"></use></svg>
+              </button>
+            </div>
+          </header>
+
+          <div class="locked-panel" id="locked-panel" hidden>
+            <div class="lock-seal"><svg class="icon"><use href="#i-lock"></use></svg></div>
+            <h2 id="locked-title">Locked note</h2>
+            <p id="locked-copy">Only the title is searchable while this note is locked.</p>
+            <form id="unlock-form" class="unlock-form">
+              <label for="unlock-passphrase">Passphrase</label>
+              <div class="unlock-row">
+                <input id="unlock-passphrase" type="password" autocomplete="current-password" minlength="4" required />
+                <button class="primary-button" type="submit">Unlock</button>
+              </div>
+              <p class="form-error" id="unlock-error" role="alert"></p>
+            </form>
+            <p class="lock-hint">Demo passphrase: <code>demo</code></p>
+          </div>
+
+          <div class="editor-content" id="editor-content">
+            <input class="note-title" id="note-title" type="text" placeholder="Title" aria-label="Note title" />
+            <div class="editor-toolbar">
+              <div class="save-line">
+                <span class="save-state" id="save-state" aria-live="polite">Saved</span>
+                <span class="context-dot">·</span>
+                <span id="note-updated"></span>
+              </div>
+              <button class="find-toggle" id="find-toggle" type="button">
+                <svg class="icon"><use href="#i-search"></use></svg>
+                Find in Note
+              </button>
+            </div>
+
+            <div class="find-bar" id="find-bar" hidden>
+              <svg class="icon"><use href="#i-search"></use></svg>
+              <input id="find-input" type="text" placeholder="Find in this note" autocomplete="off" spellcheck="false" />
+              <label class="find-check">
+                <input id="find-attachments" type="checkbox" />
+                Include attachments
+              </label>
+              <span class="find-count" id="find-count">0 matches</span>
+              <button class="icon-button tiny" id="find-prev" type="button" aria-label="Previous match">↑</button>
+              <button class="icon-button tiny" id="find-next" type="button" aria-label="Next match">↓</button>
+              <button class="icon-button tiny" id="find-close" type="button" aria-label="Close find">
+                <svg class="icon"><use href="#i-x"></use></svg>
+              </button>
+            </div>
+
+            <div
+              class="note-body block-editor"
+              id="note-body"
+              role="textbox"
+              aria-multiline="true"
+              aria-label="Note body"
+              data-placeholder="Start writing, or type / for blocks…"
+              spellcheck="true"
+            ></div>
+
+            <div class="inline-toolbar" id="inline-toolbar" role="toolbar" aria-label="Text formatting" hidden>
+              <button class="format-button" type="button" data-format="bold" aria-label="Bold" title="Bold"><span class="format-bold">B</span></button>
+              <button class="format-button" type="button" data-format="italic" aria-label="Italic" title="Italic"><span class="format-italic">I</span></button>
+              <button class="format-button" type="button" data-format="underline" aria-label="Underline" title="Underline"><span class="format-underline">U</span></button>
+              <button class="format-button" type="button" data-format="strikeThrough" aria-label="Strikethrough" title="Strikethrough"><span class="format-strike">S</span></button>
+              <span class="format-separator"></span>
+              <button class="format-button" type="button" data-format="code" aria-label="Inline code" title="Inline code"><span class="format-code">&lt;/&gt;</span></button>
+            </div>
+
+            <div class="slash-menu" id="slash-menu" hidden>
+              <div class="slash-menu-head">Blocks</div>
+              <div id="slash-options" role="listbox" aria-label="Block types"></div>
+              <div class="slash-menu-foot"><kbd>↑</kbd><kbd>↓</kbd> browse <kbd>Enter</kbd> choose <kbd>Esc</kbd> close</div>
+            </div>
+
+            <section class="attachment-section" id="attachment-section">
+              <div class="section-head">
+                <h3>Attachments</h3>
+                <span id="attachment-count" class="subtle"></span>
+              </div>
+              <div id="attachment-list" class="attachment-list"></div>
+            </section>
+
+            <div id="note-tags" class="note-tags"></div>
+            <footer class="editor-foot">
+              <span id="note-created"></span>
+              <span id="note-storage"></span>
+              <span id="note-id"></span>
+            </footer>
+          </div>
+        </article>
+
+      </main>
+
+      <div class="pane-resizer pane-resizer-sidebar" data-resizer="sidebar" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize sidebar" title="Drag to resize sidebar"></div>
+      <div class="pane-resizer pane-resizer-notes" data-resizer="notes" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize notes list" title="Drag to resize notes list"></div>
+    </div>
+
+    <div class="scrim" id="scrim" hidden></div>
+
+    <button
+      class="assistant-fab"
+      id="assistant-button"
+      type="button"
+      aria-haspopup="dialog"
+      aria-controls="assistant-panel"
+      aria-expanded="false"
+      title="Open assistant"
+    >
+      <img class="ai-icon" src="/ai.svg" alt="" />
+      <span>Assistant</span>
+    </button>
+
+    <div class="assistant-overlay" id="assistant-overlay" hidden>
+      <section
+        class="assistant-modal"
+        id="assistant-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="assistant-title"
+      >
+        <header class="assistant-head">
+          <div class="assistant-title">
+            <span class="assistant-mark"><img class="ai-icon" src="/ai.svg" alt="" /></span>
+            <div>
+              <h2 id="assistant-title">KNOTES Assistant</h2>
+              <p id="assistant-status">Checking provider…</p>
+            </div>
+          </div>
+          <button class="icon-button" id="assistant-close" type="button" aria-label="Close assistant">
+            <svg class="icon"><use href="#i-x"></use></svg>
+          </button>
+        </header>
+
+        <div class="assistant-context">
+          <span class="assistant-model-badge">Sonnet 5</span>
+          <span class="assistant-note-label" id="assistant-note-label"></span>
+          <span class="assistant-context-hint">Changes apply immediately</span>
+        </div>
+
+        <div class="assistant-thread" id="assistant-thread" aria-live="polite"></div>
+
+        <div class="assistant-quick" role="group" aria-label="Quick actions">
+          <button type="button" data-assistant-action="plan">Add a plan</button>
+          <button type="button" data-assistant-action="actions">Add next actions</button>
+          <button type="button" data-assistant-action="summary">Summarize</button>
+          <button type="button" data-quick-prompt="What should I do first?">What first?</button>
+        </div>
+
+        <form class="assistant-composer" id="assistant-form">
+          <textarea
+            id="assistant-input"
+            rows="2"
+            maxlength="8000"
+            placeholder="Tell Sonnet 5 what to do…"
+            aria-label="Message the assistant"
+          ></textarea>
+          <button class="assistant-send" id="assistant-send" type="submit">Send</button>
+        </form>
+
+        <p class="assistant-privacy">
+          Online only. Sonnet 5 can create, edit, organize, and delete notes immediately.
+        </p>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <div class="context-menu" id="context-menu" role="menu" hidden></div>
+    <div class="inline-assist" id="inline-assist" hidden>
+      <img class="ai-icon" src="/ai.svg" alt="" />
+      <span>AI</span>
+      <button type="button" data-inline-assist="actions">Next actions</button>
+      <button type="button" data-inline-assist="summary">Summarize</button>
+    </div>
+
+    <dialog class="dialog" id="lock-dialog">
+      <form id="lock-form">
+        <div class="dialog-icon"><svg class="icon"><use href="#i-lock"></use></svg></div>
+        <h2>Lock this note</h2>
+        <p class="dialog-copy">
+          The title stays searchable. The body and attachments are encrypted with AES-256-GCM.
+        </p>
+        <label class="field-label" for="lock-passphrase">Passphrase</label>
+        <input class="field-input" id="lock-passphrase" type="password" autocomplete="new-password" minlength="4" required />
+        <label class="field-label" for="lock-confirm">Confirm passphrase</label>
+        <input class="field-input" id="lock-confirm" type="password" autocomplete="new-password" minlength="4" required />
+        <p class="form-error" id="lock-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="lock-cancel" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Lock note</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="dialog" id="confirm-dialog">
+      <form id="confirm-form">
+        <div class="dialog-icon danger"><svg class="icon"><use href="#i-trash"></use></svg></div>
+        <h2 id="confirm-title">Delete note?</h2>
+        <p class="dialog-copy" id="confirm-copy">This cannot be undone.</p>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="confirm-cancel" type="button">Cancel</button>
+          <button class="danger-button" id="confirm-submit" type="submit">Delete</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
+
+
