@@ -50,6 +50,14 @@ const els = {
   editorFolder: $("#editor-folder"),
   editorState: $("#editor-state"),
   editorLockBadge: $("#editor-lock-badge"),
+  exportButton: $("#export-button"),
+  designOverlay: $("#design-overlay"),
+  designPanel: $(".design-panel"),
+  designKicker: $("#design-kicker"),
+  designTitle: $("#design-title"),
+  designCopy: $("#design-copy"),
+  designStatus: $("#design-status"),
+  designClose: $("#design-close"),
   pinButton: $("#pin-button"),
   lockButton: $("#lock-button"),
   assistantButton: $("#assistant-button"),
@@ -88,6 +96,8 @@ const els = {
   slashOptions: $("#slash-options"),
   attachmentCount: $("#attachment-count"),
   attachmentList: $("#attachment-list"),
+  addAttachment: $("#add-attachment"),
+  attachmentInput: $("#attachment-input"),
   noteTags: $("#note-tags"),
   noteCreated: $("#note-created"),
   noteStorage: $("#note-storage"),
@@ -125,6 +135,9 @@ const state = {
   find: { open: false, query: "", includeAttachments: false, matches: [], index: -1 },
   dirty: false,
   saving: false,
+  uploadingAttachments: false,
+  exportDesigning: false,
+  designStatusTimer: null,
   savePromise: null,
   saveTimer: null,
   searchTimer: null,
@@ -1764,6 +1777,8 @@ function renderEditor() {
   els.pinButton.classList.toggle("is-active", Boolean(note.pinned));
   els.pinButton.title = note.pinned ? "Unpin note" : "Pin note";
   els.pinButton.setAttribute("aria-label", els.pinButton.title);
+  els.exportButton.disabled = !readable;
+  els.exportButton.title = readable ? "Export note" : "Unlock the note to export it";
   els.findToggle.hidden = !readable;
   updateAssistantAvailability();
   els.noteStorage.textContent = note.locked ? "Encrypted at rest" : "Local SQLite · indexed";
@@ -1840,9 +1855,20 @@ function renderTags() {
     : `<span class="subtle">No tags on this note</span>`;
 }
 
+function formatBytes(value) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+
 function renderAttachmentList() {
   const attachments = Array.isArray(state.activeNote?.attachments) ? state.activeNote.attachments : [];
+  const editable = canEditActive();
   els.attachmentCount.textContent = attachments.length ? plural(attachments.length, "file") : "";
+  els.addAttachment.disabled = !editable || state.uploadingAttachments;
+  els.addAttachment.innerHTML = `${icon("plus")}${state.uploadingAttachments ? "Adding…" : "Add file"}`;
 
   if (!attachments.length) {
     els.attachmentList.innerHTML = `<div class="attachment-empty">No attachments on this note.</div>`;
@@ -1856,17 +1882,318 @@ function renderAttachmentList() {
     .map((attachment, index) => {
       const shouldOpen = activeMatch?.kind === "attachment" && activeMatch.attachmentIndex === index;
       const text = String(attachment?.text ?? "");
+      const size = formatBytes(attachment?.size);
+      const kind = [attachment?.kind || "file", size].filter(Boolean).join(" · ");
+      const hasFile = typeof attachment?.data === "string" && attachment.data.length > 0;
+      const textHtml = text
+        ? `<p class="attachment-text">${markQuery ? highlightText(text, markQuery) : escapeHtml(text)}</p>`
+        : `<p class="attachment-text is-empty" hidden></p>`;
       return `
         <details class="attachment-card" data-attachment-index="${index}" ${shouldOpen ? "open" : ""}>
           <summary>
             <span class="attachment-icon">${icon("paperclip")}</span>
             <span class="attachment-name">${escapeHtml(attachment?.filename || "attachment")}</span>
-            <span class="attachment-kind">${escapeHtml(attachment?.kind || "file")}</span>
+            <span class="attachment-kind">${escapeHtml(kind)}</span>
           </summary>
-          <p class="attachment-text">${markQuery ? highlightText(text, markQuery) : escapeHtml(text)}</p>
+          <div class="attachment-body">
+            ${textHtml}
+            <div class="attachment-actions">
+              ${hasFile ? `<button class="attachment-action" type="button" data-attachment-download="${index}">${icon("download")}Download</button>` : ""}
+              <button class="attachment-action is-danger" type="button" data-attachment-remove="${index}" ${editable ? "" : "disabled"}>${icon("trash")}Remove</button>
+            </div>
+          </div>
         </details>`;
     })
     .join("");
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read that file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addAttachments(files) {
+  const note = state.activeNote;
+  const chosen = Array.from(files ?? []);
+  if (!note || !canEditActive() || !chosen.length || state.uploadingAttachments) return;
+
+  state.uploadingAttachments = true;
+  renderAttachmentList();
+  let added = 0;
+  try {
+    for (const file of chosen) {
+      if (file.size > 10 * 1024 * 1024) {
+        showToast(`${file.name} is larger than 10 MB.`, true);
+        continue;
+      }
+      const data = await readFileAsDataUrl(file);
+      const result = await request(`/api/notes/${note.id}/attachments`, {
+        method: "POST",
+        body: {
+          filename: file.name,
+          mime: file.type,
+          data,
+          ...(note.locked ? { passphrase: state.sessionUnlocks.get(note.id) } : {}),
+        },
+      });
+      if (state.activeNote?.id !== note.id) return;
+      const serverAttachments = Array.isArray(result.note?.attachments) ? result.note.attachments : null;
+      const localAttachments = Array.isArray(state.activeNote.attachments) ? state.activeNote.attachments : [];
+      state.activeNote.attachments = serverAttachments ?? [...localAttachments, result.attachment];
+      state.activeNote.attachmentCount = state.activeNote.attachments.length;
+      added += 1;
+      renderAttachmentList();
+    }
+    if (added) {
+      scheduleLibraryRefresh();
+      showToast(added === 1 ? "Attachment added." : `${added} attachments added.`);
+    }
+  } catch (error) {
+    handleError(error);
+  } finally {
+    state.uploadingAttachments = false;
+    if (state.activeNote) renderAttachmentList();
+  }
+}
+
+function downloadBlob(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename || "download";
+  link.rel = "noopener";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function downloadAttachment(index) {
+  const attachment = state.activeNote?.attachments?.[index];
+  if (!attachment?.data) {
+    showToast("This attachment has no stored file.", true);
+    return;
+  }
+  try {
+    const encoded = String(attachment.data).replace(/^data:[^,]*,/i, "");
+    const binary = atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let offset = 0; offset < binary.length; offset += 1) {
+      bytes[offset] = binary.charCodeAt(offset);
+    }
+    downloadBlob(
+      attachment.filename || "attachment",
+      new Blob([bytes], { type: attachment.mime || "application/octet-stream" }),
+    );
+  } catch {
+    showToast("Could not prepare that attachment.", true);
+  }
+}
+
+async function removeAttachment(index) {
+  const note = state.activeNote;
+  const attachment = note?.attachments?.[index];
+  if (!note || !attachment || !canEditActive()) return;
+  const confirmed = await askConfirm({
+    title: "Remove this attachment?",
+    copy: `“${attachment.filename || "Attachment"}” will be removed from this note.`,
+    label: "Remove",
+  });
+  if (!confirmed) return;
+
+  try {
+    const result = await request(`/api/notes/${note.id}/attachments/${index}`, {
+      method: "DELETE",
+      body: note.locked ? { passphrase: state.sessionUnlocks.get(note.id) } : {},
+    });
+    if (state.activeNote?.id !== note.id) return;
+    const serverAttachments = Array.isArray(result.note?.attachments) ? result.note.attachments : null;
+    state.activeNote.attachments = serverAttachments
+      ?? state.activeNote.attachments.filter((_, itemIndex) => itemIndex !== index);
+    state.activeNote.attachmentCount = state.activeNote.attachments.length;
+    closeFind();
+    renderAttachmentList();
+    scheduleLibraryRefresh();
+    showToast("Attachment removed.");
+  } catch (error) {
+    handleError(error);
+  }
+}
+
+function inlineMarkdown(node) {
+  if (node.nodeType === Node.TEXT_NODE) return node.nodeValue ?? "";
+  if (node.nodeType !== Node.ELEMENT_NODE) return "";
+  const inner = Array.from(node.childNodes, inlineMarkdown).join("");
+  const tag = node.nodeName;
+  if (tag === "BR") return "\n";
+  if (tag === "STRONG") return `**${inner}**`;
+  if (tag === "EM") return `*${inner}*`;
+  if (tag === "S") return `~~${inner}~~`;
+  if (tag === "CODE") return `\`${inner}\``;
+  if (tag === "U") return `<u>${inner}</u>`;
+  return inner;
+}
+
+function blockMarkdown(block) {
+  const template = document.createElement("template");
+  template.innerHTML = sanitizeInlineHtml(block.content);
+  const text = Array.from(template.content.childNodes, inlineMarkdown).join("").trimEnd();
+  const prefixLines = (prefix) => text.split("\n").map((line) => `${prefix}${line}`).join("\n");
+
+  if (block.type === "heading-1") return `# ${text}`;
+  if (block.type === "heading-2") return `## ${text}`;
+  if (block.type === "bullet-list") return prefixLines("- ");
+  if (block.type === "todo") {
+    const due = block.properties?.dueDate ? ` (due ${block.properties.dueDate})` : "";
+    const priority = block.properties?.priority ? ` (${block.properties.priority} priority)` : "";
+    return `- [${block.properties?.checked ? "x" : " "}] ${text}${due}${priority}`;
+  }
+  if (block.type === "code-block") {
+    return `\`\`\`\n${blockPlainText(block.content)}\n\`\`\``;
+  }
+  if (block.type === "callout") return prefixLines("> ");
+  return text;
+}
+
+function exportFilename(note, extension) {
+  const base = String(note?.title || "note")
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80) || "note";
+  return `${base}.${extension}`;
+}
+
+const DESIGN_STATUS_STEPS = [
+  "Reading the note and its attachments…",
+  "Choosing a palette and typography…",
+  "Composing the page layout…",
+  "Balancing the cover, content, and appendix…",
+  "Finishing the export…",
+];
+
+function showDesignOverlay() {
+  clearInterval(state.designStatusTimer);
+  state.exportDesigning = true;
+  els.designPanel.classList.remove("is-error", "is-done");
+  els.designKicker.textContent = "AI page design";
+  els.designTitle.textContent = "Designing your export";
+  els.designCopy.textContent =
+    "The AI is choosing a layout and palette for this note. Your download starts automatically when the design is ready.";
+  els.designStatus.textContent = DESIGN_STATUS_STEPS[0];
+  els.designClose.hidden = true;
+  els.designOverlay.hidden = false;
+  let step = 0;
+  state.designStatusTimer = setInterval(() => {
+    step = Math.min(step + 1, DESIGN_STATUS_STEPS.length - 1);
+    els.designStatus.textContent = DESIGN_STATUS_STEPS[step];
+  }, 3200);
+}
+
+function closeDesignOverlay() {
+  if (state.exportDesigning) return;
+  clearInterval(state.designStatusTimer);
+  state.designStatusTimer = null;
+  els.designOverlay.hidden = true;
+}
+
+function showDesignComplete(design) {
+  clearInterval(state.designStatusTimer);
+  state.designStatusTimer = null;
+  state.exportDesigning = false;
+  els.designPanel.classList.add("is-done");
+  els.designKicker.textContent = "Design ready";
+  els.designTitle.textContent = "Your page is ready";
+  els.designCopy.textContent = "The designed HTML file is downloading now.";
+  els.designStatus.textContent = design?.themeName ? `Theme: ${design.themeName}` : "Design complete.";
+}
+
+function showDesignFailure(error) {
+  clearInterval(state.designStatusTimer);
+  state.designStatusTimer = null;
+  state.exportDesigning = false;
+  if (error?.code === "network_error") startServerRecovery();
+  els.designPanel.classList.add("is-error");
+  els.designKicker.textContent = "Export interrupted";
+  els.designTitle.textContent = "Design could not finish";
+  els.designCopy.textContent =
+    error?.message || "The AI could not design this export. Your note was not changed.";
+  els.designStatus.textContent = "No file was downloaded.";
+  els.designClose.hidden = false;
+  els.designClose.focus();
+}
+
+async function exportDesignedHtml(note) {
+  if (state.exportDesigning) return;
+  showDesignOverlay();
+  try {
+    const result = await request(`/api/notes/${note.id}/export/html`, { method: "POST" });
+    if (!result?.html) throw new Error("The AI did not return an HTML file.");
+    showDesignComplete(result.design);
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    downloadBlob(
+      result.filename || exportFilename(note, "html"),
+      new Blob([result.html], { type: "text/html;charset=utf-8" }),
+    );
+    showToast(`AI-designed export downloaded for “${note.title || "Untitled note"}”.`);
+    closeDesignOverlay();
+  } catch (error) {
+    showDesignFailure(error);
+  }
+}
+
+async function exportActiveNote(format) {
+  if (!(await saveBeforeLeave())) return;
+  const note = state.activeNote;
+  if (!note || activeIsReadOnly()) return;
+  if (format === "html") {
+    await exportDesignedHtml(note);
+    return;
+  }
+  const exportedAt = new Date().toISOString();
+  if (format === "md") {
+    downloadBlob(
+      exportFilename(note, "md"),
+      new Blob([noteMarkdown(note)], { type: "text/markdown;charset=utf-8" }),
+    );
+  } else {
+    const payload = { app: "knotes", version: 1, exportedAt, note };
+    downloadBlob(
+      exportFilename(note, "json"),
+      new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }),
+    );
+  }
+  showToast(`Exported “${note.title || "Untitled note"}”.`);
+}
+
+async function exportLibrary() {
+  try {
+    const backup = await request("/api/export");
+    const date = new Date().toISOString().slice(0, 10);
+    downloadBlob(
+      `knotes-backup-${date}.json`,
+      new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }),
+    );
+    showToast("Library exported.");
+  } catch (error) {
+    handleError(error);
+  }
+}
+
+function openExportMenu() {
+  if (!state.activeNote || activeIsReadOnly()) return;
+  const rect = els.exportButton.getBoundingClientRect();
+  openContextMenu(rect.left, rect.bottom + 5, [
+    { label: "Export note as Markdown", icon: "download", onSelect: () => exportActiveNote("md") },
+    { label: "Export note as HTML", icon: "download", onSelect: () => exportActiveNote("html") },
+    { label: "Export note as JSON", icon: "download", onSelect: () => exportActiveNote("json") },
+    { separator: true },
+    { label: "Export library backup", icon: "download", onSelect: exportLibrary },
+  ]);
 }
 
 function refreshSaveIndicators() {
@@ -3028,8 +3355,31 @@ function bindEvents() {
     closeSidebar();
     await newNote();
   });
+  els.exportButton.addEventListener("click", openExportMenu);
+  els.designClose.addEventListener("click", closeDesignOverlay);
   els.pinButton.addEventListener("click", pinActive);
   els.lockButton.addEventListener("click", lockActive);
+  els.addAttachment.addEventListener("click", () => els.attachmentInput.click());
+  els.attachmentInput.addEventListener("change", () => {
+    const files = Array.from(els.attachmentInput.files ?? []);
+    els.attachmentInput.value = "";
+    addAttachments(files);
+  });
+  els.attachmentList.addEventListener("click", (event) => {
+    const download = event.target.closest("[data-attachment-download]");
+    if (download) {
+      event.preventDefault();
+      event.stopPropagation();
+      downloadAttachment(Number(download.dataset.attachmentDownload));
+      return;
+    }
+    const remove = event.target.closest("[data-attachment-remove]");
+    if (remove) {
+      event.preventDefault();
+      event.stopPropagation();
+      removeAttachment(Number(remove.dataset.attachmentRemove));
+    }
+  });
   els.assistantButton.addEventListener("click", openAssistant);
   els.assistantClose.addEventListener("click", closeAssistant);
   els.assistantOverlay.addEventListener("click", (event) => {
@@ -3340,6 +3690,15 @@ function bindEvents() {
   });
 
   window.addEventListener("keydown", (event) => {
+    if (!els.designOverlay.hidden) {
+      if (event.key === "Escape" && !els.designClose.hidden) {
+        event.preventDefault();
+        closeDesignOverlay();
+        return;
+      }
+      event.preventDefault();
+      return;
+    }
     const key = event.key.toLocaleLowerCase();
     if ((event.metaKey || event.ctrlKey) && key === "k") {
       event.preventDefault();

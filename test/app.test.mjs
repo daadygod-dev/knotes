@@ -118,6 +118,150 @@ test("creates, updates, searches, and deletes a note", async () => {
   });
 });
 
+test("uploads, searches, and removes note attachments", async () => {
+  await withServer(async ({ base }) => {
+    const created = (await (await fetch(`${base}/api/notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Attachment API note", body: "Body" }),
+    })).json()).note;
+    const bytes = Buffer.from("api attachment needle text", "utf8");
+
+    const upload = await fetch(`${base}/api/notes/${created.id}/attachments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: "api-note.txt",
+        mime: "text/plain",
+        data: `data:text/plain;base64,${bytes.toString("base64")}`,
+      }),
+    });
+    assert.equal(upload.status, 201);
+    const uploaded = await upload.json();
+    assert.equal(uploaded.note.attachmentCount, 1);
+    assert.equal(uploaded.attachment.filename, "api-note.txt");
+    assert.equal(uploaded.attachment.size, bytes.length);
+    assert.equal(uploaded.note.attachments[0].data, bytes.toString("base64"));
+
+    const opened = (await (await fetch(`${base}/api/notes/${created.id}`)).json()).note;
+    assert.equal(opened.attachments.length, 1);
+    assert.equal((await (await fetch(`${base}/api/search?q=attachment%20needle`)).json()).count, 1);
+
+    const removed = await fetch(`${base}/api/notes/${created.id}/attachments/0`, {
+      method: "DELETE",
+    });
+    assert.equal(removed.status, 200);
+    assert.equal((await removed.json()).note.attachmentCount, 0);
+    assert.equal((await (await fetch(`${base}/api/search?q=attachment%20needle`)).json()).count, 0);
+  });
+});
+
+test("attachment uploads require the passphrase when a note is locked", async () => {
+  await withServer(async ({ base }) => {
+    const locked = (await (await fetch(`${base}/api/notes?locked=1`)).json()).notes[0];
+    const body = {
+      filename: "secret.txt",
+      mime: "text/plain",
+      data: Buffer.from("private attachment").toString("base64"),
+    };
+
+    const denied = await fetch(`${base}/api/notes/${locked.id}/attachments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(denied.status, 401);
+    assert.equal((await denied.json()).code, "locked");
+
+    const allowed = await fetch(`${base}/api/notes/${locked.id}/attachments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, passphrase: "demo" }),
+    });
+    assert.equal(allowed.status, 201);
+    assert.equal((await allowed.json()).note.attachmentCount, 1);
+
+    const unlocked = (await (await fetch(`${base}/api/notes/${locked.id}/unlock`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ passphrase: "demo" }),
+    })).json());
+    assert.equal(unlocked.attachments.length, 1);
+  });
+});
+
+test("exports the note library as JSON", async () => {
+  await withServer(async ({ base }) => {
+    const response = await fetch(`${base}/api/export`);
+    assert.equal(response.status, 200);
+    const backup = await response.json();
+    assert.equal(backup.app, "knotes");
+    assert.equal(backup.version, 1);
+    assert.equal(backup.notes.length, 14);
+    assert.ok(backup.notes.find((note) => note.locked)?.encryptedPayload);
+  });
+});
+
+test("AI HTML export designs an unlocked note and refuses locked notes", async () => {
+  const designed = [];
+  const assistant = {
+    async designExport({ note }) {
+      designed.push(note.id);
+      return {
+        design: {
+          themeName: "Test folio",
+          layout: "journal",
+          pattern: "lines",
+          displayFont: "serif",
+          bodyFont: "serif",
+          density: "balanced",
+          radius: 8,
+          dropCap: true,
+          palette: {
+            canvas: "#ebe4d8",
+            paper: "#fffdf8",
+            ink: "#26211b",
+            muted: "#73695c",
+            line: "#dcd1c0",
+            accent: "#8f5c20",
+            accentSoft: "#f2e5d0",
+          },
+        },
+        meta: { provider: "test", model: "test", elapsedMs: 1 },
+      };
+    },
+  };
+
+  await withServer(
+    async ({ base }) => {
+      const notes = (await (await fetch(`${base}/api/notes?limit=50`)).json()).notes;
+      const open = notes.find((note) => !note.locked);
+      const response = await fetch(`${base}/api/notes/${open.id}/export/html`, { method: "POST" });
+      assert.equal(response.status, 200);
+      const exported = await response.json();
+      assert.match(exported.html, /^<!doctype html>/);
+      assert.match(exported.html, /class="page layout-journal pattern-lines/);
+      assert.match(exported.html, /AI design · Test folio/);
+      assert.match(exported.filename, /\(AI design \d{4}-\d{2}-\d{2}\)\.html$/);
+      assert.deepEqual(designed, [open.id]);
+
+      const locked = notes.find((note) => note.locked);
+      const denied = await fetch(`${base}/api/notes/${locked.id}/export/html`, { method: "POST" });
+      assert.equal(denied.status, 423);
+      assert.equal((await denied.json()).code, "note_locked");
+      assert.deepEqual(designed, [open.id]);
+    },
+    { assistant },
+  );
+
+  await withServer(async ({ base }) => {
+    const note = (await (await fetch(`${base}/api/notes?limit=1`)).json()).notes[0];
+    const response = await fetch(`${base}/api/notes/${note.id}/export/html`, { method: "POST" });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).code, "ai_not_configured");
+  });
+});
+
 test("unlock endpoint rejects bad passphrases and returns encrypted content", async () => {
   await withServer(async ({ base }) => {
     const locked = (await (await fetch(`${base}/api/notes?locked=1`)).json()).notes[0];
@@ -327,6 +471,57 @@ test("assistant status is fixed to Sonnet 5 and chat fails cleanly when unconfig
 
       assert.equal((await fetch(`${base}/api/assistant/models`)).status, 404);
       assert.equal((await fetch(`${base}/api/assistant/plan`, { method: "POST" })).status, 404);
+    },
+    { assistant },
+  );
+});
+
+test("assistant designs an HTML export without exposing tools to the model", async () => {
+  const calls = [];
+  const assistant = createAssistant({
+    apiKey: "cc_test_key",
+    fetchImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      calls.push({ url, body });
+      return assistantReply({
+        content: JSON.stringify({
+          themeName: "Copper folio",
+          layout: "journal",
+          pattern: "lines",
+          displayFont: "serif",
+          bodyFont: "serif",
+          density: "balanced",
+          radius: 6,
+          dropCap: true,
+          palette: {
+            canvas: "#ece3d3",
+            paper: "#fffdf8",
+            ink: "#211c16",
+            muted: "#756a5b",
+            line: "#dccfbc",
+            accent: "#965f20",
+            accentSoft: "#f1e3cc",
+          },
+        }),
+      });
+    },
+  });
+
+  await withServer(
+    async ({ base }) => {
+      const note = (await (await fetch(`${base}/api/notes?limit=1`)).json()).notes[0];
+      const response = await fetch(`${base}/api/notes/${note.id}/export/html`, { method: "POST" });
+      assert.equal(response.status, 200);
+      const result = await response.json();
+      assert.equal(result.design.themeName, "Copper folio");
+      assert.match(result.html, /class="page layout-journal pattern-lines/);
+      assert.match(result.html, /AI design · Copper folio/);
+
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].body.tools, undefined);
+      assert.equal(calls[0].body.tool_choice, undefined);
+      assert.equal(calls[0].body.max_tokens, 8000);
+      assert.match(calls[0].body.messages[0].content, /art director for KNOTES/);
     },
     { assistant },
   );

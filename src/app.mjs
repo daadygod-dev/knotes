@@ -3,8 +3,10 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { getAsset, isSea } from "node:sea";
 import { AppError } from "./db.mjs";
+import { exportFileName, renderExportHtml } from "./export-html.mjs";
 
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
+const MAX_ATTACHMENT_JSON_BYTES = 16 * 1024 * 1024;
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -51,9 +53,9 @@ function sendError(res, error, logger) {
   sendJson(res, 500, { error: "Something went wrong.", code: "internal_error" });
 }
 
-async function readJson(req) {
+async function readJson(req, maxBytes = MAX_JSON_BYTES) {
   const declared = Number(req.headers["content-length"] ?? 0);
-  if (declared > MAX_JSON_BYTES) {
+  if (declared > maxBytes) {
     req.resume();
     throw new AppError(413, "Request body is too large.", "body_too_large");
   }
@@ -62,7 +64,7 @@ async function readJson(req) {
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > MAX_JSON_BYTES) {
+    if (size > maxBytes) {
       throw new AppError(413, "Request body is too large.", "body_too_large");
     }
     chunks.push(chunk);
@@ -82,6 +84,14 @@ function parseId(value) {
     throw new AppError(404, "Note not found.", "not_found");
   }
   return id;
+}
+
+function parseAttachmentIndex(value) {
+  const index = Number(value);
+  if (!Number.isInteger(index) || index < 0) {
+    throw new AppError(404, "Attachment not found.", "attachment_not_found");
+  }
+  return index;
 }
 
 function parseLimit(value, fallback) {
@@ -162,6 +172,37 @@ async function handleApi(req, res, url, store, assistant, logger) {
     return;
   }
 
+  if (pathname === "/api/export" && method === "GET") {
+    sendJson(res, 200, store.exportAll());
+    return;
+  }
+
+  const attachmentsMatch = pathname.match(/^\/api\/notes\/(\d+)\/attachments$/);
+  if (attachmentsMatch) {
+    if (method !== "POST") {
+      res.setHeader("Allow", "POST");
+      throw new AppError(405, "Method not allowed.", "method_not_allowed");
+    }
+    const id = parseId(attachmentsMatch[1]);
+    const input = await readJson(req, MAX_ATTACHMENT_JSON_BYTES);
+    const result = store.addAttachment(id, input);
+    sendJson(res, 201, result);
+    return;
+  }
+
+  const attachmentMatch = pathname.match(/^\/api\/notes\/(\d+)\/attachments\/(\d+)$/);
+  if (attachmentMatch) {
+    if (method !== "DELETE") {
+      res.setHeader("Allow", "DELETE");
+      throw new AppError(405, "Method not allowed.", "method_not_allowed");
+    }
+    const id = parseId(attachmentMatch[1]);
+    const input = await readJson(req);
+    const result = store.removeAttachment(id, parseAttachmentIndex(attachmentMatch[2]), input.passphrase);
+    sendJson(res, 200, result);
+    return;
+  }
+
   if (pathname === "/api/search" && method === "GET") {
     const scope = url.searchParams.get("scope") === "folder" ? "folder" : "all";
     const filters = queryFilters(url);
@@ -207,6 +248,36 @@ async function handleApi(req, res, url, store, assistant, logger) {
     const input = await readJson(req);
     const unlocked = store.unlock(id, input.passphrase);
     sendJson(res, 200, unlocked);
+    return;
+  }
+
+  const htmlExportMatch = pathname.match(/^\/api\/notes\/(\d+)\/export\/html$/);
+  if (htmlExportMatch) {
+    if (method !== "POST") {
+      res.setHeader("Allow", "POST");
+      throw new AppError(405, "Method not allowed.", "method_not_allowed");
+    }
+    if (!assistant?.designExport) {
+      throw new AppError(
+        503,
+        "The AI export designer is not configured. Set RADOXAI_API_KEY.",
+        "ai_not_configured",
+      );
+    }
+    const id = parseId(htmlExportMatch[1]);
+    const note = store.get(id);
+    if (!note) throw new AppError(404, "Note not found.", "note_not_found");
+    if (note.locked) {
+      throw new AppError(423, "Unlock the note before exporting it.", "note_locked");
+    }
+    const result = await assistant.designExport({ note });
+    const html = renderExportHtml(note, result.design);
+    sendJson(res, 200, {
+      html,
+      filename: exportFileName(note.title),
+      design: result.design,
+      meta: result.meta,
+    });
     return;
   }
 

@@ -1,6 +1,6 @@
 {
     "name": "knotes",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "private": true,
     "type": "module",
     "description": "KNOTES - a local-first notes app with fast search and an AI planning assistant, built on SQLite FTS5.",

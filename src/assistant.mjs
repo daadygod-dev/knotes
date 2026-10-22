@@ -1,4 +1,5 @@
 import { AppError, normalizeBlocks } from "./db.mjs";
+import { buildExportDesignMessages, parseExportDesign } from "./export-html.mjs";
 
 const DEFAULT_BASE_URL = "https://radoxai.com/v1";
 const DEFAULT_MODEL = "claude-sonnet-5";
@@ -663,9 +664,15 @@ export function createAssistant({
   const configured = Boolean(host && (key || !isRadox));
   let busy = false;
 
-  async function requestChat(messages, maxTokens = 4096) {
+  async function requestChat(
+    messages,
+    { maxTokens = 4096, temperature = 0.2, tools = TOOLS, toolChoice = "auto" } = {},
+  ) {
     const headers = { "Content-Type": "application/json", Accept: "application/json" };
     if (key) headers.Authorization = `Bearer ${key}`;
+    const toolPayload = Array.isArray(tools) && tools.length
+      ? { tools, tool_choice: toolChoice }
+      : {};
 
     let response;
     try {
@@ -675,10 +682,9 @@ export function createAssistant({
         body: JSON.stringify({
           model: DEFAULT_MODEL,
           messages,
-          temperature: 0.2,
+          temperature,
           max_tokens: maxTokens,
-          tools: TOOLS,
-          tool_choice: "auto",
+          ...toolPayload,
         }),
         signal: AbortSignal.timeout(timeout),
       });
@@ -761,7 +767,7 @@ export function createAssistant({
         for (let turn = 0; turn < MAX_TOOL_TURNS; turn += 1) {
           let reply;
           try {
-            reply = await requestChat(conversation, 4096);
+            reply = await requestChat(conversation, { maxTokens: 4096 });
           } catch (error) {
             if (actions.length) {
               partial = true;
@@ -839,6 +845,60 @@ export function createAssistant({
           actions,
           changed: actions.length > 0,
           partial,
+          meta: {
+            provider,
+            model: DEFAULT_MODEL,
+            elapsedMs: Date.now() - started,
+          },
+        };
+      } finally {
+        busy = false;
+      }
+    },
+
+    async designExport({ note } = {}) {
+      if (!configured) {
+        throw new AppError(
+          503,
+          "The AI export designer is not configured. Set RADOXAI_API_KEY.",
+          "ai_not_configured",
+        );
+      }
+      if (!note) {
+        throw new AppError(404, "Note not found.", "note_not_found");
+      }
+      if (note.locked) {
+        throw new AppError(423, "Unlock the note before exporting it.", "note_locked");
+      }
+      if (busy) {
+        throw new AppError(429, "The AI is already working on a request.", "ai_busy");
+      }
+
+      const started = Date.now();
+      busy = true;
+      try {
+        let reply;
+        try {
+          reply = await requestChat(buildExportDesignMessages(note), {
+            maxTokens: 8000,
+            temperature: 0.65,
+            tools: null,
+          });
+        } catch (error) {
+          throw mapUpstreamError(error);
+        }
+
+        const design = parseExportDesign(reply.content);
+        if (!design) {
+          throw new AppError(
+            502,
+            "The AI returned an invalid page design. Try the export again.",
+            "ai_design_invalid",
+          );
+        }
+
+        return {
+          design,
           meta: {
             provider,
             model: DEFAULT_MODEL,

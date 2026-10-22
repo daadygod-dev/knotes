@@ -147,6 +147,93 @@ test("locking and metadata edits preserve attachment counts and content", () => 
   }
 });
 
+test("attachment files round-trip, index their text, and can be removed", () => {
+  const store = createStore({ path: ":memory:" });
+  try {
+    const note = store.create({ title: "Files", body: "Body" });
+    const bytes = Buffer.from("Attachment needle text", "utf8");
+    const added = store.addAttachment(note.id, {
+      filename: "evidence.txt",
+      mime: "text/plain",
+      data: bytes.toString("base64"),
+    });
+
+    assert.equal(added.note.attachmentCount, 1);
+    assert.equal(added.attachment.size, bytes.length);
+    assert.equal(added.attachment.mime, "text/plain");
+    assert.equal(added.note.attachments[0].data, bytes.toString("base64"));
+    assert.equal(store.search({ q: "needle" }).count, 1);
+
+    const removed = store.removeAttachment(note.id, 0);
+    assert.equal(removed.note.attachmentCount, 0);
+    assert.equal(store.search({ q: "needle" }).count, 0);
+    assert.throws(
+      () => store.removeAttachment(note.id, 0),
+      (error) => error.code === "attachment_not_found",
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("locked notes encrypt uploaded attachments and require the passphrase", () => {
+  const store = createStore({ path: ":memory:" });
+  try {
+    const note = store.create({ title: "Private files", body: "Body" });
+    store.update(note.id, { lockPassphrase: "abcd" });
+    const bytes = Buffer.from("locked attachment needle", "utf8");
+
+    assert.throws(
+      () => store.addAttachment(note.id, {
+        filename: "secret.txt",
+        mime: "text/plain",
+        data: bytes.toString("base64"),
+      }),
+      (error) => error.code === "locked",
+    );
+
+    const added = store.addAttachment(note.id, {
+      filename: "secret.txt",
+      mime: "text/plain",
+      data: bytes.toString("base64"),
+      passphrase: "abcd",
+    });
+    assert.equal(added.note.locked, true);
+    assert.equal(added.note.attachmentCount, 1);
+    assert.equal(added.note.attachments, null);
+    assert.equal(store.search({ q: "locked attachment" }).count, 0);
+
+    const opened = store.unlock(note.id, "abcd");
+    assert.equal(opened.attachments.length, 1);
+    assert.equal(opened.attachments[0].data, bytes.toString("base64"));
+    assert.match(opened.attachments[0].text, /needle/);
+
+    const removed = store.removeAttachment(note.id, 0, "abcd");
+    assert.equal(removed.note.locked, true);
+    assert.equal(removed.note.attachmentCount, 0);
+    assert.deepEqual(store.unlock(note.id, "abcd").attachments, []);
+  } finally {
+    store.close();
+  }
+});
+
+test("library export includes unlocked content and encrypted locked payloads", () => {
+  const store = seededStore();
+  try {
+    const backup = store.exportAll();
+    assert.equal(backup.app, "knotes");
+    assert.equal(backup.notes.length, 14);
+    assert.ok(backup.exportedAt);
+
+    const locked = backup.notes.find((note) => note.locked);
+    assert.ok(locked);
+    assert.equal(locked.body, null);
+    assert.match(locked.encryptedPayload, /"v":1/);
+  } finally {
+    store.close();
+  }
+});
+
 test("list filters and pagination counts are consistent", () => {
   const store = seededStore();
   try {

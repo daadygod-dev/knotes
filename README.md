@@ -123,9 +123,9 @@ This writes `public/app-icon.ico`, every PNG size in `public/icons/`, and the ho
 npm test
 ```
 
-The suite uses the built-in `node:test` runner and covers the FTS index, ranking, query parsing, block persistence and sanitization, legacy block migration, locking/encryption, CRUD, API errors, manifest/icon serving, static serving, security headers, fixed-model assistant status, autonomous note tools, action reporting, explicit deletion, locked-note isolation, and provider error mapping.
+The suite uses the built-in `node:test` runner and covers the FTS index, ranking, query parsing, block persistence and sanitization, legacy block migration, locking/encryption, CRUD, attachment uploads and removal, library export, AI HTML export design validation and rendering, API errors, manifest/icon serving, static serving, security headers, fixed-model assistant status, autonomous note tools, action reporting, explicit deletion, locked-note isolation, and provider error mapping.
 
-Current result: **25 tests, 25 passing**.
+Current result: **38 tests, 38 passing**.
 
 ## Search behavior
 
@@ -166,9 +166,19 @@ The seeded locked note uses the demo passphrase `demo`. This is sample data, not
 
 ## Attachments
 
-Attachments are stored as structured JSON with a filename, kind, and extracted text. The seed data includes simulated receipt scans, meeting notes, and other extracted text so attachment search can be exercised without an OCR pipeline.
+The editor can attach files up to 10 MB each, with a maximum of 20 files or 30 MB per note. File bytes are stored as base64 in the note's `attachments` JSON, alongside the filename, MIME type, kind, size, and extracted text. Text-like files contribute to full-text search; images and PDFs are stored and downloadable but are not OCRed or parsed.
 
-The API accepts attachments when creating or updating notes. The current UI displays attachments and searches their extracted text but does not include an upload or OCR workflow.
+Attachments on locked notes are encrypted with the note payload. Adding, downloading, or removing them requires the note to be unlocked with its passphrase. The seed data includes simulated receipt scans, meeting notes, and other extracted text so attachment search can be exercised without an OCR pipeline.
+
+The UI supports adding multiple files, downloading stored files, and removing attachments. Export a single note as Markdown, AI-designed HTML, or JSON from the editor's export button, or export the entire library as a JSON backup.
+
+### AI-designed HTML export
+
+Choosing **Export note as HTML** asks the configured AI for a visual direction, then renders that direction on the server into a self-contained page. A blocking overlay stays visible while the AI works and the download starts automatically when the design is ready.
+
+The AI returns only validated design tokens: palette, typography, layout, background pattern, density, corner radius, and drop-cap preference. It never returns raw HTML or CSS. The server applies those tokens to a trusted renderer, enforces readable text/background contrast, escapes all note content, and embeds attachments as downloadable `data:` links. Exported pages contain no scripts, external fonts, or network requests.
+
+AI HTML export requires `RADOXAI_API_KEY`, uses the same fixed `claude-sonnet-5` model as the assistant, and cannot export a locked note until it is unlocked. If the AI is not configured, the export fails without downloading anything.
 
 ## Block editor
 
@@ -190,6 +200,10 @@ The server derives the plain-text `body` from the blocks for previews, search, a
 | `PUT`, `PATCH` | `/api/notes/:id` | Update one note |
 | `DELETE` | `/api/notes/:id` | Delete one note |
 | `POST` | `/api/notes/:id/unlock` | Decrypt one note for the current session |
+| `POST` | `/api/notes/:id/attachments` | Add a file attachment |
+| `DELETE` | `/api/notes/:id/attachments/:index` | Remove an attachment by zero-based index |
+| `POST` | `/api/notes/:id/export/html` | AI-design one note and return a self-contained HTML document |
+| `GET` | `/api/export` | Export the note library as JSON |
 | `GET` | `/api/search` | Full-text search |
 | `GET` | `/api/suggestions` | Search suggestions |
 | `GET` | `/api/assistant/status` | Provider configuration and fixed model |
@@ -231,7 +245,7 @@ The exact seeded note ID can differ after recreating the database. Read `/api/bo
 | `HOST` | `127.0.0.1` | Bind address |
 | `NOTES_DB` | `data/notes.db` | SQLite database path |
 | `NOTES_SEED` | enabled | Set to `0` to disable seeding an empty database |
-| `RADOXAI_API_KEY` | empty | RadoxAI key; enables the assistant |
+| `RADOXAI_API_KEY` | empty | RadoxAI key; enables the assistant and AI-designed HTML export |
 | `RADOXAI_BASE_URL` | `https://radoxai.com/v1` | OpenAI-compatible provider base URL |
 | `KNOTES_UPDATE` | enabled | Set to `0` to disable GitHub update checks |
 | `KNOTES_UPDATE_REPO` | `daadygod-dev/knotes` | Public GitHub repository used for releases |
@@ -289,13 +303,13 @@ notes-search/
 - The FTS table is a projection of the `notes` table; writes update both in a transaction.
 - Search snippets use control characters as match markers, then become escaped `{text, match}` segments in JSON. The browser never receives raw HTML for highlighting.
 - The server sets a restrictive CSP, `nosniff`, `no-referrer`, and same-origin policies.
-- API bodies are limited to 2 MB.
+- API bodies are limited to 2 MB, except attachment uploads at 16 MB.
 - Static file paths are resolved and checked so requests cannot escape `public/`.
 - Notes are local to this machine; there is no sync or multi-user authentication.
 
 ## Limitations
 
-- No image OCR, handwriting recognition, audio transcription, or native PDF text extraction. Attachment text is supplied as extracted text.
-- No attachment upload UI.
+- No image OCR, handwriting recognition, audio transcription, or native PDF text extraction. Text is indexed only for text-like attachments.
+- AI-designed HTML export requires a network connection and RadoxAI key. Attachment bytes are embedded so the page is portable, which can produce large HTML files.
 - No sync, sharing, or multi-user accounts.
 - The proprietary Apple Notes search implementation is not reproduced. The app reproduces the documented behavior with an open FTS5 design.

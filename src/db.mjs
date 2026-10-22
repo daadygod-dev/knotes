@@ -21,6 +21,31 @@ const MAX_BLOCKS = 2_000;
 const MAX_BLOCK_CONTENT = 20_000;
 const MAX_ATTACHMENTS = 20;
 const MAX_ATTACHMENT_TEXT = 100_000;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_ATTACHMENT_TOTAL_BYTES = 30 * 1024 * 1024;
+const TEXT_ATTACHMENT_EXTENSIONS = new Set([
+  "txt",
+  "md",
+  "markdown",
+  "csv",
+  "tsv",
+  "json",
+  "log",
+  "xml",
+  "html",
+  "htm",
+  "css",
+  "js",
+  "mjs",
+  "ts",
+  "yml",
+  "yaml",
+]);
+const TEXT_ATTACHMENT_TYPES = new Set([
+  "application/json",
+  "application/xml",
+  "application/javascript",
+]);
 const MAX_TAGS = 30;
 const BLOCK_TYPES = new Set([
   "paragraph",
@@ -390,25 +415,114 @@ function kindForFilename(filename) {
   return "file";
 }
 
+function attachmentExtension(filename) {
+  return String(filename).toLocaleLowerCase().split(".").pop() ?? "";
+}
+
+function cleanMime(value, filename) {
+  const mime = String(value ?? "").trim().toLocaleLowerCase().slice(0, 100);
+  if (/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/.test(mime)) {
+    return mime;
+  }
+  const extension = attachmentExtension(filename);
+  const fallbacks = {
+    pdf: "application/pdf",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    svg: "image/svg+xml",
+    txt: "text/plain",
+    md: "text/markdown",
+    csv: "text/csv",
+    json: "application/json",
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+    mp4: "video/mp4",
+  };
+  return fallbacks[extension] ?? "application/octet-stream";
+}
+
+function decodeAttachmentData(value) {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") {
+    throw new AppError(400, "Attachment data must be a base64 string.", "invalid_attachment_data");
+  }
+
+  const encoded = value
+    .trim()
+    .replace(/^data:[^,]*,/i, "")
+    .replace(/\s+/g, "");
+  if (!encoded || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 !== 0) {
+    throw new AppError(400, "Attachment data must be valid base64.", "invalid_attachment_data");
+  }
+
+  const data = Buffer.from(encoded, "base64");
+  if (!data.length) {
+    throw new AppError(400, "The attachment is empty.", "invalid_attachment_data");
+  }
+  if (data.length > MAX_ATTACHMENT_BYTES) {
+    throw new AppError(413, "Attachments are limited to 10 MB each.", "attachment_too_large");
+  }
+  return data;
+}
+
+function extractAttachmentText(data, filename, mime) {
+  const extension = attachmentExtension(filename);
+  const isText = mime.startsWith("text/")
+    || TEXT_ATTACHMENT_TYPES.has(mime)
+    || TEXT_ATTACHMENT_EXTENSIONS.has(extension);
+  if (!isText || data.length > 2 * 1024 * 1024) return "";
+
+  let text = data.toString("utf8");
+  if (mime.includes("html") || extension === "html" || extension === "htm") {
+    text = text
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, "")
+      .replace(/<[^>]+>/g, " ");
+  }
+  return cleanString(text, { max: MAX_ATTACHMENT_TEXT, fallback: "" });
+}
+
 function cleanAttachments(value) {
   if (value == null) return null;
   if (!Array.isArray(value)) {
     throw new AppError(400, "Attachments must be an array.", "invalid_attachments");
   }
 
-  return value.slice(0, MAX_ATTACHMENTS).map((attachment, index) => {
+  let totalBytes = 0;
+  const attachments = value.slice(0, MAX_ATTACHMENTS).map((attachment, index) => {
     const source = attachment && typeof attachment === "object" ? attachment : {};
     const filename = cleanString(source.filename, {
       max: 200,
       fallback: `attachment-${index + 1}`,
       allowNewlines: false,
     }).trim() || `attachment-${index + 1}`;
+    const kind = kindForFilename(filename);
+    const mime = cleanMime(source.mime, filename);
+    const data = decodeAttachmentData(source.data);
     const text = cleanString(source.text, {
       max: MAX_ATTACHMENT_TEXT,
       fallback: "",
-    });
-    return { filename, text, kind: kindForFilename(filename) };
+    }) || (data ? extractAttachmentText(data, filename, mime) : "");
+    const result = { filename, text, kind };
+    if (data) {
+      totalBytes += data.length;
+      result.mime = mime;
+      result.size = data.length;
+      result.data = data.toString("base64");
+    } else if (Number.isInteger(source.size) && source.size >= 0) {
+      result.size = source.size;
+      result.mime = mime;
+    }
+    return result;
   });
+
+  if (totalBytes > MAX_ATTACHMENT_TOTAL_BYTES) {
+    throw new AppError(413, "Attachments are limited to 30 MB per note.", "attachments_too_large");
+  }
+  return attachments;
 }
 
 function parseAttachments(json) {
@@ -757,6 +871,80 @@ export class Store {
       body,
       blocks: Array.isArray(payload.blocks) ? normalizeBlocks(payload.blocks) : blocksFromBody(body),
       attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+    };
+  }
+
+  _attachmentState(id, passphrase) {
+    const row = this._rawNote(id);
+    if (!row) throw new AppError(404, "Note not found.", "not_found");
+    if (row.locked) {
+      if (typeof passphrase !== "string" || passphrase.length < 4) {
+        throw new AppError(401, "This note is locked. Enter its passphrase.", "locked");
+      }
+      const current = decryptPayload(row.encrypted_payload, passphrase);
+      return {
+        row,
+        attachments: Array.isArray(current.attachments) ? current.attachments : [],
+      };
+    }
+    return { row, attachments: parseAttachments(row.attachments) };
+  }
+
+  addAttachment(id, input = {}) {
+    const { row, attachments } = this._attachmentState(id, input.passphrase);
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      throw new AppError(400, `Notes are limited to ${MAX_ATTACHMENTS} attachments.`, "too_many_attachments");
+    }
+
+    const attachment = cleanAttachments([input])?.[0];
+    if (!attachment?.data) {
+      throw new AppError(400, "Choose a file to attach.", "attachment_data_required");
+    }
+    const next = [...attachments, attachment];
+    const note = this.update(id, {
+      attachments: next,
+      ...(row.locked ? { passphrase: input.passphrase } : {}),
+    });
+    return { note, attachment, index: next.length - 1 };
+  }
+
+  removeAttachment(id, index, passphrase) {
+    const { row, attachments } = this._attachmentState(id, passphrase);
+    const attachmentIndex = Number(index);
+    if (
+      !Number.isInteger(attachmentIndex)
+      || attachmentIndex < 0
+      || attachmentIndex >= attachments.length
+    ) {
+      throw new AppError(404, "Attachment not found.", "attachment_not_found");
+    }
+
+    const removed = attachments[attachmentIndex];
+    const next = attachments.filter((_, itemIndex) => itemIndex !== attachmentIndex);
+    const note = this.update(id, {
+      attachments: next,
+      ...(row.locked ? { passphrase } : {}),
+    });
+    return { note, removed };
+  }
+
+  exportAll() {
+    const ids = this.db
+      .prepare("SELECT id FROM notes ORDER BY updated_at DESC, id DESC")
+      .all();
+    const notes = ids.map(({ id }) => {
+      const note = this.get(id);
+      if (note?.locked) {
+        note.encryptedPayload = this._rawNote(id).encrypted_payload;
+      }
+      return note;
+    }).filter(Boolean);
+
+    return {
+      app: "knotes",
+      version: 1,
+      exportedAt: nowIso(),
+      notes,
     };
   }
 

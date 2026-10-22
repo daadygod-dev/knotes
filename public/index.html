@@ -66,6 +66,9 @@
       <symbol id="i-paperclip" viewBox="0 0 24 24">
         <path d="m9 12.5 5.6-5.6a3.2 3.2 0 1 1 4.5 4.5l-7.3 7.3a5 5 0 0 1-7-7l7.2-7.2"></path>
       </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24">
+        <path d="M12 4v10m-4-4 4 4 4-4M5 19h14"></path>
+      </symbol>
       <symbol id="i-chevron" viewBox="0 0 24 24">
         <path d="m9 6 6 6-6 6"></path>
       </symbol>
@@ -261,7 +264,16 @@
               </span>
             </div>
             <div class="editor-actions">
-
+              <button
+                class="icon-button"
+                id="export-button"
+                type="button"
+                aria-label="Export note"
+                aria-haspopup="menu"
+                title="Export note"
+              >
+                <svg class="icon"><use href="#i-download"></use></svg>
+              </button>
               <button class="icon-button" id="pin-button" type="button" aria-label="Pin note" title="Pin note">
                 <svg class="icon"><use href="#i-pin"></use></svg>
               </button>
@@ -343,8 +355,15 @@
             <section class="attachment-section" id="attachment-section">
               <div class="section-head">
                 <h3>Attachments</h3>
-                <span id="attachment-count" class="subtle"></span>
+                <div class="section-actions">
+                  <span id="attachment-count" class="subtle"></span>
+                  <button class="attachment-add" id="add-attachment" type="button">
+                    <svg class="icon"><use href="#i-plus"></use></svg>
+                    Add file
+                  </button>
+                </div>
               </div>
+              <input id="attachment-input" type="file" multiple hidden />
               <div id="attachment-list" class="attachment-list"></div>
             </section>
 
@@ -428,6 +447,29 @@
         <p class="assistant-privacy">
           Online only. Sonnet 5 can create, edit, organize, and delete notes immediately.
         </p>
+      </section>
+    </div>
+
+    <div class="design-overlay" id="design-overlay" hidden>
+      <section
+        class="design-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="design-title"
+        aria-describedby="design-copy"
+      >
+        <div class="design-mark" aria-hidden="true"><i></i><i></i><i></i></div>
+        <p class="design-kicker" id="design-kicker">AI page design</p>
+        <h2 id="design-title">Designing your export</h2>
+        <p class="design-copy" id="design-copy">
+          The AI is choosing a layout and palette for this note. Your download starts automatically
+          when the design is ready.
+        </p>
+        <div class="design-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <p class="design-status" id="design-status" role="status" aria-live="polite">
+          Reading the note and composing a design…
+        </p>
+        <button class="primary-button" id="design-close" type="button" hidden>Close</button>
       </section>
     </div>
 

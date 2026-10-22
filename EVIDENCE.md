@@ -279,7 +279,7 @@ Deliberate differences:
 - Apple documents handwriting, image-object, and scanned-document search. This app searches **already extracted** attachment text; it has no OCR, handwriting recognition, or image-understanding pipeline.
 - Apple's ranking and index internals are private. This app's BM25 weights are a transparent approximation, not a recovered Apple formula.
 - The app does not implement Apple's “Notes with Drawings” suggestion or gallery-specific search.
-- Attachments are JSON records with simulated extracted text. The UI does not currently upload files or perform OCR.
+- Attachments are JSON records containing base64 file bytes plus extracted text for text-like files. The UI uploads and downloads files, but does not perform OCR, handwriting recognition, or PDF parsing.
 - Apple may show only a title for locked notes in search results; this app now follows that rule exactly in the FTS index and result label.
 
 ## 5. Verification
@@ -293,8 +293,8 @@ npm test
 Result:
 
 ```text
-tests 14
-pass 14
+tests 38
+pass 38
 fail 0
 ```
 
@@ -305,23 +305,29 @@ The suite covers:
 - FTS synchronization on create/update/delete
 - Locked-note title-only search, including the locked tag exclusion
 - AES-GCM unlock and permanent lock removal
+- Attachment upload, download data round-trip, FTS indexing, and removal
+- Locked attachment encryption and passphrase enforcement
+- Library export including encrypted locked payloads
+- AI HTML design normalization, contrast enforcement, fenced-JSON parsing, bounded prompts, rendered escaping, embedded attachments, and filenames
+- AI HTML export success, unconfigured-provider refusal, and locked-note refusal
 - Attachment-count preservation across metadata edits and locking
 - API CRUD, unlock, security headers, malformed JSON, oversized bodies, and missing routes
+- Assistant tool calls, locked-note isolation, deletion safety, and provider error mapping
 
 ### Browser smoke test
 
-The UI was exercised with Playwright against an in-process memory store:
+A current smoke test used headless Microsoft Edge controlled through the DevTools Protocol against the real server and database. It opened “Weekly product meeting”, chose **Export note as HTML**, observed the blocking design overlay through its status changes, and confirmed the automatic download.
 
 ```text
-initialTitle: "All notes"
-initialCount: 14
-editorTitle: "Weekly product meeting"
-search receipt: 1 result, highlighted "receipt"
-find in note: 1 of 1, attachment opened
-locked filter: 1 card, "Passwords and account recovery"
-unlock with "demo": encrypted body revealed
-console/page errors: []
+menu: Export note as Markdown / HTML / JSON / library backup
+overlay: visible, "Designing your export", "Reading the note and its attachments..."
+overlay progress: palette, layout, cover/body balancing, finishing
+overlay success: "Design ready", "Theme: Sprint Syntax"
+download: Weekly product meeting (AI design 2026-10-22).html
+download size: 1,160,239 bytes
 ```
+
+A rendered AI export was also captured at 1200 px wide and inspected: the masthead, cover, metadata grid, content, attachment appendix, and footer all rendered without overflow. The generated page contained embedded attachment data, no scripts, and no external asset requests.
 
 Screenshots:
 
